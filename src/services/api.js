@@ -219,9 +219,12 @@ export const leaveAPI = {
     method: 'POST',
     body: JSON.stringify(leaveData),
   }),
-  updateStatus: (id, statusData) => apiRequest(`/leaves/${id}/status`, {
+  updateStatus: (id, status, remarks) => apiRequest(`/leaves/${id}/status`, {
     method: 'PUT',
-    body: JSON.stringify(statusData),
+    body: JSON.stringify({ status, remarks }),
+  }),
+  delete: (id) => apiRequest(`/leaves/${id}`, {
+    method: 'DELETE',
   }),
   syncToAttendance: () => apiRequest('/leaves/sync-attendance', {
     method: 'POST',
