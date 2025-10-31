@@ -242,7 +242,7 @@ const Settings = () => {
           </div>
 
           {/* Account Information */}
-          {currentUser?.role === 'admin' && (
+          {currentUser?.managementLevel === 3 && (
             <div className="card border-0 shadow-sm mb-4 border-danger">
               <div className="card-body">
                 <h5 className="fw-bold mb-4 text-danger">

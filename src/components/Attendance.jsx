@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { attendanceAPI, employeesAPI, getUser, leaveAPI } from '../services/api';
+import { attendanceAPI, employeesAPI, getUser, leaveAPI, teamAPI } from '../services/api';
 import Calendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css';
 import './Attendance.css';
@@ -20,17 +20,31 @@ const Attendance = () => {
   const [syncing, setSyncing] = useState(false);
   
   const currentUser = getUser();
-  const canManage = currentUser?.role === 'admin' || currentUser?.role === 'hr';
+  console.log('🔍 Current user from localStorage:', currentUser);
+  const canManage = currentUser?.managementLevel >= 1; // L1, L2, L3 can manage team attendance
 
   useEffect(() => {
-    // Fetch employees if admin/HR
+    // Fetch team members for L1 and L2, all employees for L3
     if (canManage) {
-      employeesAPI.getAll().then(response => {
-        setEmployees(response.data);
-      }).catch(error => {
-        console.error('Error fetching employees:', error);
-      });
+      if (currentUser?.managementLevel === 3) {
+        // L3 Admin - get all employees
+        employeesAPI.getAll().then(response => {
+          setEmployees(response.data || []);
+        }).catch(error => {
+          console.error('Error fetching employees:', error);
+        });
+      } else {
+        // L1 and L2 - get team members via team API
+        teamAPI.getTeamMembers().then(response => {
+          console.log('Team members fetched:', response.data);
+          setEmployees(response.data || []);
+        }).catch(error => {
+          console.error('Error fetching team members:', error);
+          setEmployees([]);
+        });
+      }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canManage]);
 
   useEffect(() => {
@@ -93,7 +107,16 @@ const Attendance = () => {
       }
       console.log('=== FETCH ATTENDANCE END ===\n');
       
-      setAttendanceRecords(response.data);
+      // Filter out records with null/undefined employee references
+      const validRecords = response.data ? response.data.filter(record => record && record.employee) : [];
+      console.log('Valid records (with employee):', validRecords.length);
+      if (response.data && response.data.length !== validRecords.length) {
+        console.warn(`⚠️ Filtered out ${response.data.length - validRecords.length} records with null employees`);
+      }
+      
+      console.log('📝 Setting attendanceRecords state with:', validRecords.length, 'records');
+      console.log('Sample record structure:', validRecords[0]);
+      setAttendanceRecords(validRecords);
     } catch (error) {
       console.error('Error fetching attendance:', error);
     } finally {
@@ -311,12 +334,12 @@ const Attendance = () => {
     if (filterType === 'date' && specificDate) {
       const dateStr = new Date(specificDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }).replace(/\s/g, '_');
       filename = selectedEmployee && employeeName
-        ? `${employeeName.firstName}_${employeeName.lastName}_Attendance_${dateStr}.csv`
+        ? `${employeeName?.firstName || 'Employee'}_${employeeName?.lastName || 'Unknown'}_Attendance_${dateStr}.csv`
         : `All_Employees_Attendance_${dateStr}.csv`;
     } else {
       const monthName = new Date(filterYear, filterMonth).toLocaleDateString('en-US', { month: 'long' });
       filename = selectedEmployee && employeeName
-        ? `${employeeName.firstName}_${employeeName.lastName}_Attendance_${monthName}_${filterYear}.csv`
+        ? `${employeeName?.firstName || 'Employee'}_${employeeName?.lastName || 'Unknown'}_Attendance_${monthName}_${filterYear}.csv`
         : `All_Employees_Attendance_${monthName}_${filterYear}.csv`;
     }
     
@@ -325,13 +348,28 @@ const Attendance = () => {
     
     // CSV data rows
     attendanceRecords
-      .filter(record => canManage || record.employee._id === currentUser._id || record.employee === currentUser._id)
+      .filter(record => {
+        // Filter for regular employees
+        if (!canManage) {
+          return record.employee?._id === currentUser._id || record.employee === currentUser._id;
+        }
+        
+        // L2 users cannot view L2 and L3 level users' attendance
+        if (currentUser?.managementLevel === 2) {
+          const employeeLevel = typeof record.employee === 'object' && record.employee
+            ? record.employee.managementLevel
+            : null;
+          if (employeeLevel >= 2) return false; // Exclude L2 and L3
+        }
+        
+        return true;
+      })
       .sort((a, b) => new Date(b.date) - new Date(a.date))
       .forEach(record => {
-        const employeeName = typeof record.employee === 'object' 
-          ? `${record.employee.firstName} ${record.employee.lastName}`
+        const employeeName = typeof record.employee === 'object' && record.employee
+          ? `${record.employee.firstName || 'Unknown'} ${record.employee.lastName || 'User'}`
           : 'Unknown';
-        const employeeId = typeof record.employee === 'object'
+        const employeeId = typeof record.employee === 'object' && record.employee
           ? record.employee.employeeId || 'N/A'
           : 'N/A';
         const date = new Date(record.date).toLocaleDateString();
@@ -358,40 +396,96 @@ const Attendance = () => {
   };
 
   const getAttendanceForDate = (date) => {
+    if (!attendanceRecords || !Array.isArray(attendanceRecords)) {
+      console.warn('⚠️ attendanceRecords is not an array:', attendanceRecords);
+      return [];
+    }
     const dateStr = date.toISOString().split('T')[0];
-    return attendanceRecords.filter(record => 
-      new Date(record.date).toISOString().split('T')[0] === dateStr
+    const filtered = attendanceRecords.filter(record => 
+      record && record.date && new Date(record.date).toISOString().split('T')[0] === dateStr
     );
+    
+    if (filtered.length > 0) {
+      console.log(`📊 getAttendanceForDate(${dateStr}):`, filtered.length, 'records');
+    }
+    
+    return filtered;
   };
 
   const tileClassName = ({ date }) => {
+    if (!date) return '';
+    
     const records = getAttendanceForDate(date);
-    if (records.length > 0) {
-      const userId = currentUser._id || currentUser.id;
-      
-      // For admin/HR viewing filtered employee, or for employee viewing own data
-      let myRecord;
-      if (canManage && selectedEmployee) {
-        // Admin/HR viewing specific employee
-        myRecord = records.find(r => {
-          const empId = typeof r.employee === 'object' ? (r.employee._id || r.employee.id) : r.employee;
-          return empId === selectedEmployee;
-        });
-      } else {
-        // Employee viewing own data OR admin viewing all (show current user's record)
-        myRecord = records.find(r => {
-          const empId = typeof r.employee === 'object' ? (r.employee._id || r.employee.id) : r.employee;
-          return empId === userId;
-        });
-      }
-      
-      if (myRecord) {
-        return myRecord.status === 'present' ? 'attendance-present' :
-               myRecord.status === 'absent' ? 'attendance-absent' :
-               myRecord.status === 'half-day' ? 'attendance-halfday' :
-               myRecord.status === 'on-leave' ? 'attendance-leave' : '';
-      }
+    if (!records || records.length === 0) {
+      return '';
     }
+    
+    // Get current user from getUser() function
+    const user = getUser();
+    if (!user) {
+      console.warn('⚠️ No user from getUser() in tileClassName');
+      return '';
+    }
+    
+    // Try multiple ID formats: _id, id, userId
+    const userId = user._id || user.id || user.userId;
+    if (!userId) {
+      console.warn('⚠️ No user ID found in user object:', JSON.stringify(user));
+      return '';
+    }
+    
+    // Debug logging for troubleshooting
+    const dateStr = date.toISOString().split('T')[0];
+    console.log(`📅 Tile for ${dateStr}:`, {
+      recordsCount: records.length,
+      canManage,
+      selectedEmployee,
+      userId,
+      userObject: user,
+      records: records.map(r => ({
+        employeeId: typeof r.employee === 'object' ? r.employee?._id : r.employee,
+        employeeObject: r.employee,
+        status: r.status,
+        date: r.date
+      }))
+    });
+    
+    // For admin/HR viewing filtered employee, or for employee viewing own data
+    let myRecord;
+    if (canManage && selectedEmployee) {
+      // Admin/HR viewing specific employee
+      myRecord = records.find(r => {
+        if (!r || !r.employee) return false;
+        const empId = typeof r.employee === 'object' ? (r.employee?._id || r.employee?.id) : r.employee;
+        const match = empId === selectedEmployee;
+        console.log(`  Checking employee filter: ${empId} === ${selectedEmployee} ? ${match}`);
+        return match;
+      });
+    } else {
+      // Employee viewing own data OR admin viewing all (show current user's record)
+      myRecord = records.find(r => {
+        if (!r || !r.employee) return false;
+        const empId = typeof r.employee === 'object' ? (r.employee?._id || r.employee?.id) : r.employee;
+        const match = empId === userId || empId?.toString() === userId?.toString();
+        console.log(`  Checking user match: ${empId} === ${userId} ? ${match}`);
+        if (match) {
+          console.log(`✅ Found matching record for ${dateStr}:`, r.status);
+        }
+        return match;
+      });
+    }
+    
+    if (myRecord && myRecord.status) {
+      const className = myRecord.status === 'present' ? 'attendance-present' :
+                       myRecord.status === 'absent' ? 'attendance-absent' :
+                       myRecord.status === 'half-day' ? 'attendance-halfday' :
+                       myRecord.status === 'on-leave' ? 'attendance-leave' : '';
+      
+      console.log(`🎨 Applying class "${className}" for ${dateStr}`, myRecord);
+      return className;
+    }
+    
+    console.log(`❌ No matching record found for ${dateStr}`);
     return '';
   };
 
@@ -497,60 +591,60 @@ const Attendance = () => {
         </div>
       </div>
 
-      {/* Filters for Admin/HR */}
-      {canManage && (
-        <div className="row mb-4">
-          <div className="col-md-12">
-            <div className="card border-0 shadow-sm">
-              <div className="card-body">
-                <h5 className="fw-bold mb-3">
-                  <i className="bi bi-funnel me-2"></i>
-                  Filters
-                </h5>
-                
-                {/* Filter Type Toggle */}
-                <div className="mb-3">
-                  <div className="btn-group w-100" role="group">
-                    <button
-                      type="button"
-                      className={`btn ${filterType === 'month' ? 'btn-primary' : 'btn-outline-primary'}`}
-                      onClick={() => {
-                        setFilterType('month');
-                        setSpecificDate('');
-                      }}
-                    >
-                      <i className="bi bi-calendar-month me-2"></i>
-                      Filter by Month
-                    </button>
-                    <button
-                      type="button"
-                      className={`btn ${filterType === 'date' ? 'btn-primary' : 'btn-outline-primary'}`}
-                      onClick={() => setFilterType('date')}
-                    >
-                      <i className="bi bi-calendar-day me-2"></i>
-                      Filter by Specific Date
-                    </button>
-                  </div>
+      {/* Filters - Available for All Users */}
+      <div className="row mb-4">
+        <div className="col-md-12">
+          <div className="card border-0 shadow-sm">
+            <div className="card-body">
+              <h5 className="fw-bold mb-3">
+                <i className="bi bi-funnel me-2"></i>
+                Filters
+              </h5>
+              
+              {/* Filter Type Toggle */}
+              <div className="mb-3">
+                <div className="btn-group w-100" role="group">
+                  <button
+                    type="button"
+                    className={`btn ${filterType === 'month' ? 'btn-primary' : 'btn-outline-primary'}`}
+                    onClick={() => {
+                      setFilterType('month');
+                      setSpecificDate('');
+                    }}
+                  >
+                    <i className="bi bi-calendar-month me-2"></i>
+                    Filter by Month
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn ${filterType === 'date' ? 'btn-primary' : 'btn-outline-primary'}`}
+                    onClick={() => setFilterType('date')}
+                  >
+                    <i className="bi bi-calendar-day me-2"></i>
+                    Filter by Specific Date
+                  </button>
                 </div>
+              </div>
 
-                <div className="row g-3">
-                  {canManage && (
-                    <div className="col-md-3">
-                      <label className="form-label">Employee</label>
-                      <select 
-                        className="form-select"
-                        value={selectedEmployee}
-                        onChange={(e) => setSelectedEmployee(e.target.value)}
-                      >
-                        <option value="">All Employees</option>
-                        {employees.map(emp => (
-                          <option key={emp._id} value={emp._id}>
-                            {emp.firstName} {emp.lastName} ({emp.employeeId})
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
+              <div className="row g-3">
+                {/* Employee Dropdown - Only for L1+ (Managers and above) */}
+                {canManage && (
+                  <div className="col-md-3">
+                    <label className="form-label">Employee</label>
+                    <select 
+                      className="form-select"
+                      value={selectedEmployee}
+                      onChange={(e) => setSelectedEmployee(e.target.value)}
+                    >
+                      <option value="">All Employees</option>
+                      {employees.map(emp => (
+                        <option key={emp._id} value={emp._id}>
+                          {emp.firstName} {emp.lastName} ({emp.employeeId})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
 
                   {filterType === 'month' ? (
                     <>
@@ -642,7 +736,6 @@ const Attendance = () => {
             </div>
           </div>
         </div>
-      )}
 
       <div className="row">
         {/* Calendar */}
@@ -760,9 +853,19 @@ const Attendance = () => {
                     ) : (
                       attendanceRecords
                         .filter(record => {
+                          if (!record) return false;
+                          
+                          // L2 users cannot view L2 and L3 level users' attendance
+                          if (currentUser?.managementLevel === 2) {
+                            const employeeLevel = typeof record.employee === 'object' && record.employee
+                              ? record.employee.managementLevel
+                              : null;
+                            if (employeeLevel >= 2) return false; // Exclude L2 and L3
+                          }
+                          
                           if (canManage) return true;
-                          const userId = currentUser._id || currentUser.id;
-                          const employeeId = typeof record.employee === 'object' 
+                          const userId = currentUser?._id || currentUser?.id;
+                          const employeeId = typeof record.employee === 'object' && record.employee
                             ? (record.employee._id || record.employee.id)
                             : record.employee;
                           return employeeId === userId;
@@ -773,8 +876,8 @@ const Attendance = () => {
                             <td>{new Date(record.date).toLocaleDateString()}</td>
                             {canManage && !selectedEmployee && (
                               <td>
-                                {typeof record.employee === 'object' 
-                                  ? `${record.employee.firstName} ${record.employee.lastName}`
+                                {typeof record.employee === 'object' && record.employee
+                                  ? `${record.employee.firstName || 'Unknown'} ${record.employee.lastName || 'User'}`
                                   : 'Unknown'}
                               </td>
                             )}

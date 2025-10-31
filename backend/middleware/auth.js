@@ -43,3 +43,22 @@ export const authorize = (...roles) => {
     next();
   };
 };
+
+// Management Level-based authorization
+// L0 = Employee (managementLevel: 0)
+// L1 = Manager (managementLevel: 1)
+// L2 = Senior Manager (managementLevel: 2)
+// L3 = Admin/CEO (managementLevel: 3)
+export const authorizeLevel = (minLevel) => {
+  return (req, res, next) => {
+    const userLevel = req.user.managementLevel || 0;
+    
+    if (userLevel < minLevel) {
+      return res.status(403).json({
+        success: false,
+        message: `Access denied. Required management level: L${minLevel}, Your level: L${userLevel}`,
+      });
+    }
+    next();
+  };
+};

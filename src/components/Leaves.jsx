@@ -1,6 +1,69 @@
 import { useState, useEffect } from 'react';
-import { getUser, leaveAPI } from '../services/api';
+import { getUser } from '../services/api';
 import './Leaves.css';
+
+// Import API from services
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+
+const getToken = () => localStorage.getItem('token');
+
+const leaveAPI = {
+  getAll: async (params = {}) => {
+    const token = getToken();
+    const queryString = new URLSearchParams(params).toString();
+    const response = await fetch(`${API_BASE_URL}/leaves?${queryString}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    return response.json();
+  },
+  
+  create: async (data) => {
+    const token = getToken();
+    const response = await fetch(`${API_BASE_URL}/leaves`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify(data)
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Failed to create leave');
+    }
+    return response.json();
+  },
+  
+  updateStatus: async (id, status, remarks) => {
+    const token = getToken();
+    const response = await fetch(`${API_BASE_URL}/leaves/${id}/status`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({ status, remarks })
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Failed to update status');
+    }
+    return response.json();
+  },
+  
+  delete: async (id) => {
+    const token = getToken();
+    const response = await fetch(`${API_BASE_URL}/leaves/${id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Failed to delete leave');
+    }
+    return response.json();
+  }
+};
 
 const Leaves = () => {
   const [leaves, setLeaves] = useState([]);
@@ -15,7 +78,10 @@ const Leaves = () => {
   });
   
   const currentUser = getUser();
-  const canManage = currentUser?.role === 'admin' || currentUser?.role === 'hr';
+  console.log('🔍 Current User in Leaves:', currentUser);
+  
+  // L1+ can manage leaves (L1, L2, L3)
+  const canManage = currentUser?.managementLevel >= 1;
   
   const [newLeave, setNewLeave] = useState({
     leaveType: 'casual',
@@ -154,20 +220,24 @@ const Leaves = () => {
   };
 
   const filteredLeaves = leaves.filter(leave => {
+    console.log('🔍 Filtering - canManage:', canManage, 'managementLevel:', currentUser?.managementLevel);
+    
     if (!canManage) {
       // Handle both populated and non-populated employee field
-      const employeeId = typeof leave.employee === 'object' ? leave.employee._id : leave.employee;
-      const currentUserId = currentUser._id || currentUser.id;
+      const employeeId = typeof leave.employee === 'object' && leave.employee ? leave.employee._id : leave.employee;
+      const currentUserId = currentUser?._id || currentUser?.id;
       
       console.log('Filtering leave:', {
         leaveId: leave._id,
-        employeeId: String(employeeId),
-        currentUserId: String(currentUserId),
+        employeeId: String(employeeId || ''),
+        currentUserId: String(currentUserId || ''),
         match: String(employeeId) === String(currentUserId)
       });
       
       return String(employeeId) === String(currentUserId);
     }
+    
+    console.log('✅ Admin/Manager - showing all leaves');
     return true;
   });
   
@@ -312,9 +382,9 @@ const Leaves = () => {
         ) : (
           filteredLeaves.map(leave => {
             const leaveTypeStyle = getLeaveTypeStyle(leave.leaveType);
-            const employeeId = typeof leave.employee === 'object' ? leave.employee._id : leave.employee;
-            const currentUserId = currentUser._id || currentUser.id;
-            const isMyLeave = String(employeeId) === String(currentUserId);
+            const employeeId = typeof leave.employee === 'object' && leave.employee ? leave.employee._id : leave.employee;
+            const currentUserId = currentUser?._id || currentUser?.id;
+            const isMyLeave = String(employeeId || '') === String(currentUserId || '');
             
             return (
               <div key={leave._id} className="col-md-6 col-lg-4 mb-4">
@@ -396,19 +466,32 @@ const Leaves = () => {
                     {/* Action Buttons */}
                     <div className="d-flex gap-2">
                       {canManage && leave.status === 'pending' && (() => {
-                        // Check if current user is HR and leave is for an HR employee
-                        const isHRLeave = leave.employee?.role === 'hr';
-                        const isCurrentUserHR = currentUser?.role === 'hr';
-                        const shouldHideButtons = isCurrentUserHR && isHRLeave;
-
-                        if (shouldHideButtons) {
+                        // RM Hierarchy: Check if user can approve this leave
+                        const employeeLevel = leave.employee?.managementLevel || 0;
+                        const userLevel = currentUser?.managementLevel || 0;
+                        const isOwnLeave = leave.employee?._id === currentUser?._id;
+                        
+                        // Cannot approve own leave
+                        if (isOwnLeave) {
                           return (
                             <div className="alert alert-warning mb-0 py-2 px-3 small w-100">
                               <i className="bi bi-exclamation-triangle me-2"></i>
-                              Only Admin can approve/reject HR leave requests
+                              You cannot approve your own leave
                             </div>
                           );
                         }
+                        
+                        // L1 can only approve L0
+                        if (userLevel === 1 && employeeLevel !== 0) {
+                          return null; // Don't show buttons
+                        }
+                        
+                        // L2 can approve L0 and L1
+                        if (userLevel === 2 && employeeLevel >= 2) {
+                          return null; // Don't show buttons
+                        }
+                        
+                        // L3 can approve all
 
                         return (
                           <>

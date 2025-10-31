@@ -59,13 +59,14 @@ const Dashboard = () => {
       console.log('Will show Check Out button:', myRecord ? !myRecord.checkOut : false);
       console.log('=== CHECK TODAY STATUS END ===\n');
       
-      if (myRecord) {
+      if (myRecord && myRecord.checkIn) {
+        // Record exists AND has check-in time
         setTodayAttendance(myRecord);
         const shouldShowCheckOut = !myRecord.checkOut;
         console.log('✅ Setting checkedIn to:', shouldShowCheckOut);
         setCheckedIn(shouldShowCheckOut);
       } else {
-        console.log('❌ No record found - setting checkedIn to false');
+        console.log('❌ No check-in record found for today - setting checkedIn to false');
         setTodayAttendance(null);
         setCheckedIn(false);
       }

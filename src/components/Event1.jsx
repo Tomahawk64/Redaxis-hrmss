@@ -101,7 +101,7 @@ export default function Event1() {
     console.log('Current user:', currentUser);
     
     // Admin and HR can delete any event
-    if (currentUser.role === 'admin' || currentUser.role === 'hr') {
+    if (currentUser.managementLevel >= 2) { // L2 and L3 can manage events
       console.log('User is admin/hr - can delete');
       return true;
     }

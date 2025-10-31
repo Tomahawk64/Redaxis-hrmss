@@ -14,6 +14,8 @@ import {
   FaBuilding,
   FaChevronDown,
   FaChevronUp,
+  FaUserFriends,
+  FaLaptop,
 } from "react-icons/fa";
 import { MdSpaceDashboard } from "react-icons/md";
 import { BiSolidInbox } from "react-icons/bi";
@@ -24,33 +26,53 @@ import userImg from "../assets/client.jpg";
 import { authAPI, getUser } from "../services/api";
 import "/src/App.css";
 
-const navItems = [
-  { name: "Dashboard", icon: <MdSpaceDashboard />, path: "/" },
-  { name: "Employees", icon: <FaUsers />, path: "/employees" },
-  { name: "Departments", icon: <FaBuilding />, path: "/departments", roles: ['admin', 'hr'] },
-  { name: "Attendance", icon: <FaClipboardCheck />, path: "/attendance" },
-  { name: "Leaves", icon: <FaUmbrellaBeach />, path: "/leaves" },
-  { name: "Payroll", icon: <FaMoneyBillWave />, path: "/payroll" },
-  { 
-    name: "Engage", 
-    icon: <HiSparkles />, 
-    isDropdown: true,
-    subItems: [
-      { name: "Event", icon: <FaCalendarAlt />, path: "/event" },
-      { name: "Feed", icon: <FaNewspaper />, path: "/feed" },
-      { name: "Recognition", icon: <FaAward />, path: "/recognition" },
-    ]
-  },
-  { name: "Inbox", icon: <BiSolidInbox />, path: "/chat" },
-  { name: "Me", icon: <FaUser />, path: "/profile" },
-  { name: "Settings", icon: <FaCog />, path: "/settings" },
-];
-
 const SideBar = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const user = getUser();
   const [openDropdown, setOpenDropdown] = useState(null);
+
+  // Determine dropdown name based on management level
+  const manageDropdownName = (user?.managementLevel >= 2) ? "Manage" : "View";
+
+  // Build navItems dynamically based on user level
+  const navItems = [
+    { name: "Dashboard", icon: <MdSpaceDashboard />, path: "/" },
+    { 
+      name: manageDropdownName, 
+      icon: <FaBuilding />, 
+      isDropdown: true,
+      subItems: [
+        { name: "Employees", icon: <FaUsers />, path: "/employees" },
+        { name: "Departments", icon: <FaBuilding />, path: "/departments" },
+      ]
+    },
+    { name: "My Team", icon: <FaUserFriends />, path: "/my-team", showForManagers: true },
+    { name: "Assets", icon: <FaLaptop />, path: "/assets" },
+    { name: "Payroll", icon: <FaMoneyBillWave />, path: "/payroll" },
+    { 
+      name: "Engage", 
+      icon: <HiSparkles />, 
+      isDropdown: true,
+      subItems: [
+        { name: "Event", icon: <FaCalendarAlt />, path: "/event" },
+        { name: "Feed", icon: <FaNewspaper />, path: "/feed" },
+        { name: "Recognition", icon: <FaAward />, path: "/recognition" },
+      ]
+    },
+    { name: "Inbox", icon: <BiSolidInbox />, path: "/chat" },
+    { 
+      name: "Me", 
+      icon: <FaUser />, 
+      isDropdown: true,
+      subItems: [
+        { name: "Profile", icon: <FaUser />, path: "/profile" },
+        { name: "Attendance", icon: <FaClipboardCheck />, path: "/attendance" },
+        { name: "Leaves", icon: <FaUmbrellaBeach />, path: "/leaves" },
+      ]
+    },
+    { name: "Settings", icon: <FaCog />, path: "/settings" },
+  ];
 
   const handleLogout = () => {
     authAPI.logout();
@@ -67,14 +89,21 @@ const SideBar = () => {
         <img src={user?.profileImage || userImg} alt="User" className="avatar" />
         <div>
           <div className="user-name">{user?.firstName || 'User'}</div>
-          <div className="user-role">{user?.position || user?.role || 'Employee'}</div>
+          <div className="user-role">
+            {user?.position || 
+             (user?.managementLevel === 3 ? 'Admin (L3)' :
+              user?.managementLevel === 2 ? 'Senior Manager (L2)' :
+              user?.managementLevel === 1 ? 'Manager (L1)' : 'Employee (L0)')}
+          </div>
         </div>
       </div>
 
       <ul className="nav-list">
         {navItems.map((item) => {
-          // Filter menu items by role if roles are specified
-          if (item.roles && !item.roles.includes(user?.role)) {
+          // Remove old role-based filtering
+          
+          // Filter "My Team" item - only show for managers (managementLevel >= 1)
+          if (item.showForManagers && (!user?.managementLevel || user.managementLevel < 1)) {
             return null;
           }
           

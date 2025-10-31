@@ -9,7 +9,7 @@ const Feed = () => {
   const [commentText, setCommentText] = useState({});
   
   const currentUser = getUser();
-  const canCreate = currentUser?.role === 'admin' || currentUser?.role === 'hr';
+  const canCreate = currentUser?.managementLevel >= 2; // L2 and L3 can create announcements
 
   const [newPost, setNewPost] = useState({
     content: '',

@@ -219,12 +219,9 @@ export const leaveAPI = {
     method: 'POST',
     body: JSON.stringify(leaveData),
   }),
-  updateStatus: (id, status, remarks) => apiRequest(`/leaves/${id}/status`, {
+  updateStatus: (id, statusData) => apiRequest(`/leaves/${id}/status`, {
     method: 'PUT',
-    body: JSON.stringify({ status, remarks }),
-  }),
-  delete: (id) => apiRequest(`/leaves/${id}`, {
-    method: 'DELETE',
+    body: JSON.stringify(statusData),
   }),
   syncToAttendance: () => apiRequest('/leaves/sync-attendance', {
     method: 'POST',
@@ -262,6 +259,65 @@ export const payrollAPI = {
   process: (id) => apiRequest(`/payroll/${id}/process`, { method: 'POST' }),
 };
 
+// Team API (Reporting Manager Features)
+export const teamAPI = {
+  // Get all team members reporting to the current manager
+  getTeamMembers: () => apiRequest('/team/members'),
+  
+  // Get team statistics (present, absent, on-leave, pending leaves, attendance rate)
+  getTeamStats: () => apiRequest('/team/stats'),
+  
+  // Get team attendance records
+  getTeamAttendance: (params = {}) => {
+    const queryString = new URLSearchParams(params).toString();
+    return apiRequest(`/team/attendance${queryString ? `?${queryString}` : ''}`);
+  },
+  
+  // Get team leave requests
+  getTeamLeaves: (params = {}) => {
+    const queryString = new URLSearchParams(params).toString();
+    return apiRequest(`/team/leaves${queryString ? `?${queryString}` : ''}`);
+  },
+  
+  // Bulk approve/reject multiple leave requests
+  bulkApproveLeaves: (bulkData) => apiRequest('/team/leaves/bulk-approve', {
+    method: 'POST',
+    body: JSON.stringify(bulkData),
+  }),
+  
+  // Get team performance report (attendance rate, working hours, leaves per employee)
+  getTeamPerformance: (params = {}) => {
+    const queryString = new URLSearchParams(params).toString();
+    return apiRequest(`/team/performance${queryString ? `?${queryString}` : ''}`);
+  },
+  
+  // Get all managers for dropdown selection (L1+)
+  getManagers: () => apiRequest('/team/managers'),
+  
+  // Get team calendar view (month calendar with daily status)
+  getTeamCalendar: (params = {}) => {
+    const queryString = new URLSearchParams(params).toString();
+    return apiRequest(`/team/calendar${queryString ? `?${queryString}` : ''}`);
+  },
+};
+
+// Assets API
+export const assetsAPI = {
+  // Get all assets (filtered by user level on backend)
+  getAll: () => apiRequest('/assets'),
+  
+  // Add asset to an employee
+  addAsset: (employeeId, assetData) => apiRequest(`/assets/${employeeId}`, {
+    method: 'POST',
+    body: JSON.stringify(assetData),
+  }),
+  
+  // Revoke asset from an employee
+  revokeAsset: (employeeId, assetId) => apiRequest(`/assets/${employeeId}/${assetId}/revoke`, {
+    method: 'PUT',
+  }),
+};
+
 export default {
   auth: authAPI,
   events: eventsAPI,
@@ -274,4 +330,6 @@ export default {
   leave: leaveAPI,
   departments: departmentsAPI,
   payroll: payrollAPI,
+  team: teamAPI,
+  assets: assetsAPI,
 };

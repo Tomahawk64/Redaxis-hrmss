@@ -46,6 +46,17 @@ const userSchema = new mongoose.Schema({
   phone: {
     type: String,
   },
+  panCard: {
+    type: String,
+    uppercase: true,
+    trim: true,
+    match: [/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/, 'Please enter a valid PAN card number (e.g., ABCDE1234F)']
+  },
+  aadharCard: {
+    type: String,
+    trim: true,
+    match: [/^\d{12}$/, 'Please enter a valid 12-digit Aadhar number']
+  },
   dateOfBirth: {
     type: Date,
   },
@@ -78,6 +89,59 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: true,
   },
+  // === REPORTING MANAGER HIERARCHY FIELDS ===
+  reportingManager: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null, // null for top-level (Admin/CEO)
+  },
+  managementLevel: {
+    type: Number,
+    enum: [0, 1, 2, 3], // 0=Employee, 1=RM(L1), 2=Senior Manager(L2), 3=Admin/CEO(L3)
+    default: 0,
+  },
+  teamMembers: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+  }], // Auto-populated: employees reporting to this person
+  canApproveLeaves: {
+    type: Boolean,
+    default: false, // true for L1, L2, L3
+  },
+  canManageAttendance: {
+    type: Boolean,
+    default: false, // true for L1, L2, L3
+  },
+  // === WORK SCHEDULE ===
+  saturdayWorking: {
+    type: Boolean,
+    default: false, // false = Saturday off, true = Saturday working
+  },
+  // === ASSETS ALLOCATED ===
+  assets: [{
+    name: {
+      type: String,
+      required: true,
+    },
+    allocatedDate: {
+      type: Date,
+      default: Date.now,
+    },
+    allocatedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+    },
+    status: {
+      type: String,
+      enum: ['active', 'revoked'],
+      default: 'active',
+    },
+    revokedDate: Date,
+    revokedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+    },
+  }],
 }, {
   timestamps: true,
 });
@@ -89,6 +153,32 @@ userSchema.pre('save', async function(next) {
   }
   const salt = await bcrypt.genSalt(10);
   this.password = await bcrypt.hash(this.password, salt);
+});
+
+// Auto-update teamMembers when reportingManager is assigned
+userSchema.post('save', async function(doc) {
+  if (doc.reportingManager) {
+    // Add this user to their manager's teamMembers
+    await User.findByIdAndUpdate(
+      doc.reportingManager,
+      { $addToSet: { teamMembers: doc._id } }
+    );
+  }
+});
+
+// Remove from teamMembers when reportingManager is changed
+userSchema.pre('findOneAndUpdate', async function() {
+  const update = this.getUpdate();
+  if (update.reportingManager || update.$set?.reportingManager) {
+    const docToUpdate = await this.model.findOne(this.getQuery());
+    if (docToUpdate && docToUpdate.reportingManager) {
+      // Remove from old manager's team
+      await User.findByIdAndUpdate(
+        docToUpdate.reportingManager,
+        { $pull: { teamMembers: docToUpdate._id } }
+      );
+    }
+  }
 });
 
 // Method to compare password

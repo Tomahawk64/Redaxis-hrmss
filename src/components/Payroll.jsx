@@ -11,7 +11,7 @@ const Payroll = () => {
   const [filterYear, setFilterYear] = useState(new Date().getFullYear());
   
   const currentUser = getUser();
-  const canManage = currentUser?.role === 'admin' || currentUser?.role === 'hr';
+  const canManage = currentUser?.managementLevel >= 2; // Only L2 and L3 can manage payroll
 
   useEffect(() => {
     fetchPayrolls();

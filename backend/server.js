@@ -15,6 +15,11 @@ import dashboardRoutes from './routes/dashboardRoutes.js';
 import feedRoutes from './routes/feedRoutes.js';
 import recognitionRoutes from './routes/recognitionRoutes.js';
 import chatRoutes from './routes/chatRoutes.js';
+import teamRoutes from './routes/teamRoutes.js';
+import assetsRoutes from './routes/assetsRoutes.js';
+
+// Import utilities
+import { setupEscalationCron } from './utils/escalationService.js';
 
 // Load environment variables
 dotenv.config();
@@ -29,7 +34,11 @@ app.use(express.urlencoded({ extended: true }));
 // Database connection
 mongoose
   .connect(process.env.MONGODB_URI)
-  .then(() => console.log('✅ MongoDB connected successfully'))
+  .then(() => {
+    console.log('✅ MongoDB connected successfully');
+    // Start escalation cron job after DB connection
+    setupEscalationCron();
+  })
   .catch((err) => console.error('❌ MongoDB connection error:', err));
 
 // Routes
@@ -44,6 +53,8 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/feed', feedRoutes);
 app.use('/api/recognition', recognitionRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/team', teamRoutes);
+app.use('/api/assets', assetsRoutes);
 
 // Health check route
 app.get('/api/health', (req, res) => {

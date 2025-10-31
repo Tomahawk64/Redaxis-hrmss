@@ -75,7 +75,7 @@ const DepartmentManagement = () => {
   });
 
   const currentUser = getUser();
-  const canManage = currentUser?.role === 'admin' || currentUser?.role === 'hr';
+  const canManage = currentUser?.managementLevel >= 3; // Only L3 (Admin) can manage departments
 
   useEffect(() => {
     fetchDepartments();

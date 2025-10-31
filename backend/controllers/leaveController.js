@@ -1,5 +1,29 @@
 import Leave from '../models/Leave.js';
 import Attendance from '../models/Attendance.js';
+import User from '../models/User.js';
+
+// Helper function to check if an employee is in the manager's reporting chain
+const isEmployeeInReportingChain = async (managerId, employeeId) => {
+  try {
+    const employee = await User.findById(employeeId).select('reportingManager');
+    if (!employee) return false;
+    
+    // Check direct report
+    if (employee.reportingManager && employee.reportingManager.toString() === managerId) {
+      return true;
+    }
+    
+    // Check indirect reports (recursive)
+    if (employee.reportingManager) {
+      return await isEmployeeInReportingChain(managerId, employee.reportingManager);
+    }
+    
+    return false;
+  } catch (error) {
+    console.error('Error checking reporting chain:', error);
+    return false;
+  }
+};
 
 // Helper function to sync approved leave to attendance system
 const syncLeaveToAttendance = async (leave) => {
@@ -84,11 +108,62 @@ export const getLeaves = async (req, res) => {
     const { employeeId, status } = req.query;
     let query = {};
 
-    if (employeeId) query.employee = employeeId;
-    if (status) query.status = status;
+    // === FILTER BY MANAGEMENT LEVEL ===
+    const userLevel = req.user.managementLevel || 0;
+    
+    // L0 (Employee): Only see own leaves
+    if (userLevel === 0) {
+      query.employee = req.user.id;
+    }
+    // L1 (Manager): See own leaves + direct L0 reports
+    else if (userLevel === 1) {
+      // Query direct L0 reports from database
+      const directReports = await User.find({
+        reportingManager: req.user.id,
+        managementLevel: 0,
+        isActive: true
+      }).select('_id');
+      
+      const teamMemberIds = directReports.map(u => u._id);
+      query.employee = { $in: [req.user.id, ...teamMemberIds] };
+    }
+    // L2 (Senior Manager): See own leaves + L1 managers + their L0 reports
+    else if (userLevel === 2) {
+      // Get all L1 managers reporting to this L2
+      const l1Managers = await User.find({ 
+        reportingManager: req.user.id,
+        managementLevel: 1,
+        isActive: true
+      }).select('_id');
+      
+      const l1ManagerIds = l1Managers.map(m => m._id);
+      
+      // Get all L0 employees under those L1 managers (query database directly)
+      const l0Employees = await User.find({
+        reportingManager: { $in: l1ManagerIds },
+        managementLevel: 0,
+        isActive: true
+      }).select('_id');
+      
+      const l0EmployeeIds = l0Employees.map(e => e._id);
+      
+      query.employee = { $in: [req.user.id, ...l1ManagerIds, ...l0EmployeeIds] };
+    }
+    // L3 (Admin): See all leaves (no filter)
+    else if (userLevel === 3) {
+      // No employee filter - see all
+    }
+
+    // Apply additional filters
+    if (employeeId && userLevel === 3) {
+      query.employee = employeeId; // L3 can filter by specific employee
+    }
+    if (status) {
+      query.status = status;
+    }
 
     const leaves = await Leave.find(query)
-      .populate('employee', 'firstName lastName employeeId role')
+      .populate('employee', 'firstName lastName employeeId managementLevel reportingManager')
       .populate('approvedBy', 'firstName lastName employeeId')
       .sort({ createdAt: -1 });
 
@@ -111,32 +186,95 @@ export const createLeave = async (req, res) => {
 export const updateLeaveStatus = async (req, res) => {
   try {
     const { status, remarks } = req.body;
-    const leave = await Leave.findById(req.params.id).populate('employee', 'firstName lastName role');
+    const leave = await Leave.findById(req.params.id)
+      .populate('employee', 'firstName lastName reportingManager managementLevel')
+      .populate('currentApprover', 'firstName lastName managementLevel');
 
     if (!leave) {
       return res.status(404).json({ success: false, message: 'Leave not found' });
     }
 
-    // Check if HR is trying to approve their own leave
-    if (req.user.role === 'hr' && leave.employee._id.toString() === req.user.id) {
+    // === NEW HIERARCHY: MANAGEMENT LEVEL BASED APPROVAL ===
+    
+    const userLevel = req.user.managementLevel || 0;
+    const employeeLevel = leave.employee.managementLevel || 0;
+    
+    // Check if user can approve leaves
+    if (!req.user.canApproveLeaves) {
       return res.status(403).json({ 
         success: false, 
-        message: 'HR cannot approve their own leave. Only admin can approve HR leave requests.' 
+        message: 'Not authorized to approve leaves' 
       });
     }
 
-    // Check if HR is trying to approve another HR's leave
-    if (req.user.role === 'hr' && leave.employee.role === 'hr') {
+    // Check if user is trying to approve their own leave
+    if (leave.employee._id.toString() === req.user.id) {
       return res.status(403).json({ 
         success: false, 
-        message: 'HR cannot approve other HR leave requests. Only admin can approve HR leaves.' 
+        message: 'You cannot approve your own leave' 
       });
     }
 
+    // Level 3 (Admin) can approve any leave
+    if (userLevel === 3) {
+      // Admin can approve anything
+    }
+    // Level 2 (Senior Manager) can approve L0 and L1 leaves
+    else if (userLevel === 2) {
+      if (employeeLevel >= 2) {
+        return res.status(403).json({ 
+          success: false, 
+          message: 'Level 2 managers can only approve leaves for Level 0 and Level 1 employees' 
+        });
+      }
+      // Check if employee is in reporting chain
+      const isInChain = await isEmployeeInReportingChain(req.user.id, leave.employee._id);
+      if (!isInChain) {
+        return res.status(403).json({ 
+          success: false, 
+          message: 'You can only approve leaves for employees in your reporting chain' 
+        });
+      }
+    }
+    // Level 1 (RM) can only approve L0 direct reports
+    else if (userLevel === 1) {
+      if (employeeLevel !== 0) {
+        return res.status(403).json({ 
+          success: false, 
+          message: 'Level 1 managers can only approve leaves for Level 0 employees' 
+        });
+      }
+      // Check if employee reports directly to this RM
+      if (leave.employee.reportingManager.toString() !== req.user.id) {
+        return res.status(403).json({ 
+          success: false, 
+          message: 'You can only approve leaves for your direct reports' 
+        });
+      }
+    }
+
+    // Update leave status
     leave.status = status;
     leave.remarks = remarks;
     leave.approvedBy = req.user.id;
     leave.approvalDate = new Date();
+    
+    // Add to approval history
+    leave.approvalHistory.push({
+      approver: req.user.id,
+      action: status,
+      date: new Date(),
+      remarks: remarks,
+      level: req.user.managementLevel || 3 // Admin=3, HR=3, RM=1/2
+    });
+
+    // Reset escalation if approved/rejected
+    if (status === 'approved' || status === 'rejected') {
+      leave.isEscalated = false;
+      leave.escalationDate = null;
+      leave.escalatedTo = null;
+    }
+
     await leave.save();
 
     // Sync with attendance system
@@ -148,8 +286,13 @@ export const updateLeaveStatus = async (req, res) => {
       await removeLeaveFromAttendance(leave);
     }
 
-    // Populate approver details before sending response
-    await leave.populate('approvedBy', 'firstName lastName employeeId');
+    // Populate all references before sending response
+    await leave.populate([
+      { path: 'approvedBy', select: 'firstName lastName employeeId' },
+      { path: 'employee', select: 'firstName lastName employeeId' },
+      { path: 'currentApprover', select: 'firstName lastName employeeId' },
+      { path: 'escalatedTo', select: 'firstName lastName employeeId' }
+    ]);
 
     res.status(200).json({ success: true, data: leave });
   } catch (error) {
@@ -166,8 +309,11 @@ export const deleteLeave = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Leave not found' });
     }
 
-    // Only allow employee to cancel their own pending leave
-    if (leave.employee.toString() !== req.user.id && req.user.role !== 'admin' && req.user.role !== 'hr') {
+    // Allow employee to cancel their own pending leave OR Level 3 admin
+    const isOwnLeave = leave.employee.toString() === req.user.id;
+    const isAdmin = req.user.managementLevel === 3;
+    
+    if (!isOwnLeave && !isAdmin) {
       return res.status(403).json({ success: false, message: 'Not authorized to cancel this leave' });
     }
 

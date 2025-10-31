@@ -140,10 +140,15 @@ const Profile = () => {
               <h5 className="fw-bold mb-1">{user?.firstName} {user?.lastName}</h5>
               <p className="text-muted mb-2">{user?.position || 'Employee'}</p>
               <span className={`badge ${
-                user?.role === 'admin' ? 'bg-danger' :
-                user?.role === 'hr' ? 'bg-warning' : 'bg-primary'
+                user?.managementLevel === 3 ? 'bg-danger' :
+                user?.managementLevel === 2 ? 'bg-warning' :
+                user?.managementLevel === 1 ? 'bg-info' : 'bg-primary'
               } mb-3`}>
-                {user?.role?.toUpperCase()}
+                LEVEL {user?.managementLevel || 0} - {
+                  user?.managementLevel === 3 ? 'ADMIN' :
+                  user?.managementLevel === 2 ? 'SR. MANAGER' :
+                  user?.managementLevel === 1 ? 'MANAGER' : 'EMPLOYEE'
+                }
               </span>
               
               <div className="d-grid gap-2 mt-4">
@@ -251,6 +256,35 @@ const Profile = () => {
                       type="text"
                       className="form-control"
                       value={user?.position || ''}
+                      disabled
+                    />
+                    <small className="text-muted">Contact HR to update</small>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Identity Documents Card */}
+            <div className="card border-0 shadow-sm mb-3">
+              <div className="card-body">
+                <h6 className="fw-bold mb-3">Identity Documents</h6>
+                <div className="row g-3">
+                  <div className="col-md-6">
+                    <label className="form-label">PAN Card</label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      value={user?.panCard ? `${user.panCard.substring(0, 5)}****${user.panCard.substring(9)}` : 'Not Provided'}
+                      disabled
+                    />
+                    <small className="text-muted">Contact HR to update</small>
+                  </div>
+                  <div className="col-md-6">
+                    <label className="form-label">Aadhar Card</label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      value={user?.aadharCard ? `****-****-${user.aadharCard.substring(8)}` : 'Not Provided'}
                       disabled
                     />
                     <small className="text-muted">Contact HR to update</small>

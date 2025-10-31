@@ -7,15 +7,20 @@ import {
   deleteEmployee,
   getEmployeeStats,
 } from '../controllers/employeeController.js';
-import { protect, authorize } from '../middleware/auth.js';
+import { protect, authorizeLevel } from '../middleware/auth.js';
 
 const router = express.Router();
 
-router.get('/stats', protect, authorize('admin', 'hr'), getEmployeeStats);
+// Stats require L2+ (Senior Manager and Admin)
+router.get('/stats', protect, authorizeLevel(2), getEmployeeStats);
+
+// Get employees - handled internally based on level (all can view based on their access)
 router.get('/', protect, getEmployees);
 router.get('/:id', protect, getEmployee);
-router.post('/', protect, authorize('admin', 'hr'), createEmployee);
-router.put('/:id', protect, authorize('admin', 'hr'), updateEmployee);
-router.delete('/:id', protect, authorize('admin'), deleteEmployee);
+
+// Create/Update/Delete require L2+ (handled in controllers with additional checks)
+router.post('/', protect, authorizeLevel(2), createEmployee);
+router.put('/:id', protect, authorizeLevel(2), updateEmployee);
+router.delete('/:id', protect, authorizeLevel(3), deleteEmployee); // Only L3 can delete
 
 export default router;

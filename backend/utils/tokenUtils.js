@@ -21,9 +21,12 @@ export const sendTokenResponse = (user, statusCode, res) => {
       firstName: user.firstName,
       lastName: user.lastName,
       role: user.role,
+      managementLevel: user.managementLevel || 0, // Include management level
       department: user.department,
       position: user.position,
       profileImage: user.profileImage,
+      canApproveLeaves: user.canApproveLeaves,
+      canManageAttendance: user.canManageAttendance,
     },
   });
 };

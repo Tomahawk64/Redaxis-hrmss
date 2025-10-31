@@ -18,6 +18,8 @@ import Recognition from "./components/Recognition";
 import Chat from "./components/Chat";
 import Settings from "./components/Settings";
 import Leaves from "./components/Leaves";
+import MyTeam from "./components/MyTeam";
+import Assets from "./components/Assets";
 import { getToken, authAPI } from "./services/api";
 
 // Protected Route Component
@@ -74,6 +76,7 @@ function App() {
                   <Route path="/event/confirmation" element={<Event3 />} />
                   <Route path="/employees" element={<Employees />} />
                   <Route path="/departments" element={<DepartmentManagement />} />
+                  <Route path="/my-team" element={<MyTeam />} />
                   <Route path="/profile" element={<Profile />} />
                   <Route path="/attendance" element={<Attendance />} />
                   <Route path="/leaves" element={<Leaves />} />
@@ -82,6 +85,7 @@ function App() {
                   <Route path="/recognition" element={<Recognition />} />
                   <Route path="/chat" element={<Chat />} />
                   <Route path="/settings" element={<Settings />} />
+                  <Route path="/assets" element={<Assets />} />
                 </Routes>
               </div>
             </div>

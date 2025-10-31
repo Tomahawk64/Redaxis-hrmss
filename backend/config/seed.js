@@ -57,6 +57,7 @@ const seedDatabase = async () => {
         firstName: 'Admin',
         lastName: 'User',
         role: 'admin',
+        managementLevel: 3, // L3 - Admin/CEO
         department: departments[0]._id,
         position: 'System Administrator',
         phone: '+1234567890',
@@ -68,6 +69,8 @@ const seedDatabase = async () => {
           deductions: 5000,
         },
         status: 'active',
+        canApproveLeaves: true,
+        canManageAttendance: true,
       },
       {
         employeeId: 'HR001',
@@ -76,8 +79,9 @@ const seedDatabase = async () => {
         firstName: 'Maria',
         lastName: "D'Souza",
         role: 'hr',
+        managementLevel: 2, // L2 - Senior Manager
         department: departments[0]._id,
-        position: 'HR Manager',
+        position: 'Senior HR Manager',
         phone: '+1234567891',
         dateOfBirth: new Date('1990-05-20'),
         joiningDate: new Date('2021-03-15'),
@@ -87,6 +91,8 @@ const seedDatabase = async () => {
           deductions: 4000,
         },
         status: 'active',
+        canApproveLeaves: true,
+        canManageAttendance: true,
       },
       {
         employeeId: 'EMP001',
@@ -95,8 +101,9 @@ const seedDatabase = async () => {
         firstName: 'John',
         lastName: 'Cena',
         role: 'employee',
+        managementLevel: 1, // L1 - Manager
         department: departments[1]._id,
-        position: 'Senior Software Engineer',
+        position: 'Engineering Manager',
         phone: '+1234567892',
         dateOfBirth: new Date('1988-08-10'),
         joiningDate: new Date('2021-06-01'),
@@ -106,6 +113,8 @@ const seedDatabase = async () => {
           deductions: 4500,
         },
         status: 'active',
+        canApproveLeaves: true,
+        canManageAttendance: true,
       },
       {
         employeeId: 'EMP002',
@@ -114,8 +123,9 @@ const seedDatabase = async () => {
         firstName: 'Sarah',
         lastName: 'Johnson',
         role: 'employee',
+        managementLevel: 0, // L0 - Employee
         department: departments[2]._id,
-        position: 'Marketing Manager',
+        position: 'Marketing Specialist',
         phone: '+1234567893',
         dateOfBirth: new Date('1992-03-25'),
         joiningDate: new Date('2022-01-10'),
@@ -133,6 +143,7 @@ const seedDatabase = async () => {
         firstName: 'David',
         lastName: 'Smith',
         role: 'employee',
+        managementLevel: 0, // L0 - Employee
         department: departments[3]._id,
         position: 'Sales Executive',
         phone: '+1234567894',
@@ -152,6 +163,7 @@ const seedDatabase = async () => {
         firstName: 'Emily',
         lastName: 'Brown',
         role: 'employee',
+        managementLevel: 0, // L0 - Employee
         department: departments[4]._id,
         position: 'Financial Analyst',
         phone: '+1234567895',
@@ -167,6 +179,28 @@ const seedDatabase = async () => {
     ]);
 
     console.log('✅ Users created');
+
+    // === SET UP REPORTING MANAGER RELATIONSHIPS ===
+    // Admin (L3) -> Maria (L2) -> John (L1) -> Sarah, David, Emily (L0)
+    
+    // Maria (L2) reports to Admin (L3)
+    users[1].reportingManager = users[0]._id; // Maria reports to Admin
+    await users[1].save();
+    
+    // John (L1) reports to Maria (L2)
+    users[2].reportingManager = users[1]._id; // John reports to Maria
+    await users[2].save();
+    
+    // Sarah, David, Emily (L0) report to John (L1)
+    users[3].reportingManager = users[2]._id; // Sarah reports to John
+    users[4].reportingManager = users[2]._id; // David reports to John
+    users[5].reportingManager = users[2]._id; // Emily reports to John
+    await users[3].save();
+    await users[4].save();
+    await users[5].save();
+    
+    console.log('✅ Reporting relationships established');
+    console.log('   Admin (L3) <- Maria (L2) <- John (L1) <- [Sarah, David, Emily] (L0)');
 
     // Update department managers
     departments[0].manager = users[1]._id; // Maria as HR manager

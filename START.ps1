@@ -97,4 +97,4 @@ Write-Host "📌 Keep these terminal windows open!" -ForegroundColor Yellow
 Write-Host "   Close them to stop the servers" -ForegroundColor White
 Write-Host ""
 Write-Host "Press any key to close this startup window..." -ForegroundColor Gray
-$null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+$null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
